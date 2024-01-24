@@ -1,0 +1,17 @@
+routes:
+
+collections:
+  /:
+    permalink: /{year}/{month}/{day}/{slug}/
+    template: index
+    filter: tag:-links
+
+  /links/:
+    permalink: /links/{year}/{month}/{day}/{slug}/
+    template: links
+    filter: primary_tag:links
+    data: tag.links
+
+taxonomies:
+  tag: /tag/{slug}/
+  author: /author/{slug}/
