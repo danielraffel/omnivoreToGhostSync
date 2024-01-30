@@ -1,10 +1,17 @@
 routes:
+  /links/rss/:
+    template: links/rss
+    content_type: text/xml
+
+  /rss/:
+    template: home/rss
+    content_type: text/xml
 
 collections:
   /:
     permalink: /{year}/{month}/{day}/{slug}/
     template: index
-    filter: tag:-links
+    filter: primary_tag:-links
 
   /links/:
     permalink: /links/{year}/{month}/{day}/{slug}/
