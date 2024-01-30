@@ -66,6 +66,7 @@ const OMNIVORE_LABEL_NAME = 'ghost'; // Replace 'ghost' with the label name you 
 - Configure the necessary parameters in `index.js` before deployment.
 - Deploy the function to Google Cloud Functions.
 - Bookmark items in Omnivore with annotations and tags; these will be synced to your Ghost blog automatically.
+- Quite a few additional things were necessary to integrate posts with my blog on Ghost.org. Those adjustments are described in [this blog post](https://danielraffel.me/2024/01/30/intriguing-stuff/)
 
 ## Local Testing
 - Uncomment the local server code in `index.js` if you wish to run the application locally for testing purposes.
