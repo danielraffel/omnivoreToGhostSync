@@ -233,7 +233,8 @@ async function createOrUpdatePost(article, action, slug) {
             tags: ['links'],
             updated_at: post.updated_at,
             status: 'published',
-            visibility: 'public'
+            visibility: 'public',
+            canonical_url: article.canonicalUrl
         }, { source: 'html' });
     } else if (!post && action === 'created') {
         console.log(`Creating new post for slug: ${slug}`);
@@ -242,7 +243,8 @@ async function createOrUpdatePost(article, action, slug) {
             html: article.html,
             tags: ['links'],
             status: 'published',
-            visibility: 'public'
+            visibility: 'public',
+            canonical_url: article.canonicalUrl
         }, { source: 'html' });
     }
 
@@ -293,7 +295,8 @@ function formatToHTML(graphqlResponse) {
 
     return {
         title: article.title,
-        html: htmlContent
+        html: htmlContent,
+        canonicalUrl: article.originalArticleUrl
     };
 }
   
