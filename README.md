@@ -1,8 +1,8 @@
-[Blog Post with Additional Details](https://danielraffel.me/2024/01/30/intriguing-stuff/)
-
 # OmnivoreToGhostSync
 
-OmnivoreToGhostSync is a Cloud Function designed to seamlessly integrate the bookmarking service [Omnivore](https://omnivore.app) with the [Ghost blogging platform](https://ghost.org). This project simplifies the process of publishing curated links and annotations from Omnivore directly to a Ghost blog, making it ideal for bloggers who want a lightweight mechanism to easily post links and brief commentary (when saving a bookmark.)
+OmnivoreToGhostSync is a Cloud Function designed to seamlessly integrate the bookmarking service [Omnivore](https://omnivore.app) with the [Ghost blogging platform](https://ghost.org). This project simplifies the process of publishing curated links and annotations from Omnivore directly to a Ghost blog, making it ideal for bloggers who want a lightweight mechanism to easily post links and brief commentary (when saving a bookmark.) 
+
+Note: It's worth reading [this blog post which contains additional details](https://danielraffel.me/2024/01/30/intriguing-stuff/). This repository only contains the code necessary to technically integate Omnivore with Ghost. To surface the content Omnivore publishes to Ghost additional work is required which is described at a high-level below in the usage section. Example code is linked to in the blog post which should assist with getting up and running on your Ghost instance.
 
 ## Features
 
@@ -66,7 +66,7 @@ const OMNIVORE_LABEL_NAME = 'ghost'; // Replace 'ghost' with the label name you 
 - Configure the necessary parameters in `index.js` before deployment.
 - Deploy the function to Google Cloud Functions.
 - Bookmark items in Omnivore with annotations and tags; these will be synced to your Ghost blog automatically.
-- Quite a few additional things were necessary to integrate posts with my blog on Ghost.org. Those adjustments are described in [this blog post](https://danielraffel.me/2024/01/30/intriguing-stuff/)
+- Quite a few additional things were necessary to integrate posts with my blog on Ghost.org. It included modifying a page to host links.hbs file and rollup the posts, updating routes.yaml to link to the page and the rss feed, creating the rss feed and updating links.hbs to surface the custom RSS feed. Those adjustments are described in [this blog post](https://danielraffel.me/2024/01/30/intriguing-stuff/).
 
 ## Local Testing
 - Uncomment the local server code in `index.js` if you wish to run the application locally for testing purposes.
