@@ -83,6 +83,8 @@ async function queryOmnivoreAPI(identifier) {
                 name
               }
               highlights {
+                id
+                quote
                 annotation
               }
             }
@@ -281,6 +283,18 @@ function formatToHTML(graphqlResponse) {
 
     const article = graphqlResponse.article;
     const formattedDate = formatDate(article.createdAt);
+
+    const htmlHighlights = article.highlights.map(h => {
+        let highlightHtml = '';
+        if (h.quote) {
+            highlightHtml += `<blockquote>${h.quote}</blockquote>`;
+        }
+        if (h.annotation) {
+            highlightHtml += `<p>${h.annotation}</p>`;
+        }
+        return highlightHtml;
+    }).join(' ');
+
     const htmlContent = `
         <!--kg-card-begin: html-->
         <div class="link-item" 
@@ -289,7 +303,7 @@ function formatToHTML(graphqlResponse) {
              data-title="${article.title}" 
              data-original-url="${article.originalArticleUrl}" 
              data-creation-date="${formattedDate}">
-            <p>${article.highlights.map(h => h.annotation).join(' ')}</p>
+            ${htmlHighlights}
         </div>
         <!--kg-card-end: html-->`;
 
