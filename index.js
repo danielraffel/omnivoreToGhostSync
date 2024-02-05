@@ -136,7 +136,8 @@ function shouldProcess(graphqlResponse, action, state) {
     }
 
     const hasGhostLabel = graphqlResponse.article.labels.some(label => label.name === OMNIVORE_LABEL_NAME);
-    const hasAnnotation = graphqlResponse.article.highlights && graphqlResponse.article.highlights.length > 0 && graphqlResponse.article.highlights[0].annotation;
+    // check for any non-null annotation across all highlights
+    const hasNonNullAnnotation = graphqlResponse.article.highlights && graphqlResponse.article.highlights.some(highlight => highlight.annotation != null);
 
     if (graphqlResponse.article.labels.some(label => label.name === 'Newsletter')) {
         console.log('Detected a newsletter, not posting to Ghost');
@@ -148,11 +149,12 @@ function shouldProcess(graphqlResponse, action, state) {
             console.log('New bookmark but no ghost label, not posting to Ghost');
             return false;
         }
-        if (hasGhostLabel && !hasAnnotation) {
-            console.log('New bookmark with ghost label but no annotation, not posting to Ghost');
+        // Check if there is any non-null annotation when the ghost label exists
+        if (hasGhostLabel && !hasNonNullAnnotation) {
+            console.log('New bookmark with ghost label but no non-null annotation, not posting to Ghost');
             return false;
         }
-        console.log('Detected a new bookmark with ghost label and annotation, posting to Ghost');
+        console.log('Detected a new bookmark with ghost label and non-null annotation, posting to Ghost');
         return true;
     }
 
@@ -165,8 +167,10 @@ function shouldProcess(graphqlResponse, action, state) {
             console.log('Detected a deleted bookmark with ghost label, removing from Ghost');
             return true;
         }
-        console.log('Detected an updated bookmark with ghost label, updating Ghost');
-        return true;
+        if (hasGhostLabel && hasNonNullAnnotation) {
+            console.log('Detected an updated bookmark with ghost label and non-null annotation, updating Ghost');
+            return true;
+        }
     }
 
     console.log('Action not recognized or not applicable, not posting to Ghost');
@@ -196,50 +200,48 @@ async function updateGhostBlog(article, action, state, slug) {
     }
 }
 
-// Find existing post by slug to use for updating or deleting
-async function findPostBySlug(slug) {
-    if (!slug) {
-        throw new Error('The slug is undefined');
-    }
-
+// Find existing post by data-page-id in HTML content
+async function findPostBySlug(articleSlug) {
     try {
-        const filter = `tag:links+slug:'${slug}'`; // Assuming 'slug' is a valid field to filter by
-        console.log(`Filter used for API request: ${filter}`); // Log the filter for debugging
-        const posts = await api.posts.browse({filter: filter, formats: 'html', limit: 1});
-        return posts.length > 0 ? posts[0] : null;
+        const tag = 'links'; // Define the tag used to filter posts
+        const posts = await api.posts.browse({filter: `tag:${tag}`, limit: 10, formats: 'html'});
+        // Search each post's HTML for the data-page-id
+        const matchingPost = posts.find(post => post.html.includes(`data-page-id="${articleSlug}"`));
+        return matchingPost || null;
     } catch (error) {
-        console.error(`Error finding post by slug '${slug}':`, error);
-        // Include more error details here if necessary
+        console.error(`Error searching for post by data-page-id '${articleSlug}':`, error);
         return null;
     }
 }
 
-// For a new bookmark with the given slug create post; for updated bookmarks replace old with new content
+// Create a new post or update an existing post based on the presence of a matching slug
 async function createOrUpdatePost(article, action, slug) {
     console.log(`Attempting to create or update post for slug: ${slug}`);
-    const post = await findPostBySlug(slug);
+    const existingPost = await findPostBySlug(slug);
 
     if (!article || !article.title || !article.html) {
         console.error(`Missing article content for the slug: ${slug}`);
-        return null;
+        return;
     }
 
     let response;
 
-    if (post && action === 'updated') {
-        console.log(`Updating existing post for slug: ${slug}`);
+    if (existingPost) {
+        console.log(`Found existing post for slug: ${slug}, updating...`);
         response = await api.posts.edit({
-            id: post.id,
+            id: existingPost.id,
             title: article.title,
             html: article.html,
             tags: ['links'],
-            updated_at: post.updated_at,
+            // Ensure the updated_at field is properly set; might need to fetch current value if necessary
+            updated_at: existingPost.updated_at,
             status: 'published',
             visibility: 'public',
+            // Consider whether the canonical URL needs updating
             canonical_url: article.canonicalUrl
         }, { source: 'html' });
-    } else if (!post && action === 'created') {
-        console.log(`Creating new post for slug: ${slug}`);
+    } else {
+        console.log(`No existing post found for slug: ${slug}, creating new post...`);
         response = await api.posts.add({
             title: article.title,
             html: article.html,
@@ -251,12 +253,10 @@ async function createOrUpdatePost(article, action, slug) {
     }
 
     if (response) {
-        console.log(`Post for slug: ${slug} processed successfully.`);
+        console.log(`Post for slug: ${slug} processed successfully, action: ${action}.`);
     } else {
-        console.error(`Failed to process post for slug: ${slug}`);
+        console.error(`Failed to process post for slug: ${slug}, action: ${action}.`);
     }
-
-    return response;
 }
 
 // For a deleted bookmark with the given slug find existing post and delete it
@@ -284,17 +284,20 @@ function formatToHTML(graphqlResponse) {
     const article = graphqlResponse.article;
     const formattedDate = formatDate(article.createdAt);
 
+    // Convert each highlight's quote from Markdown to HTML and wrap with <blockquote>
     const htmlHighlights = article.highlights.map(h => {
         let highlightHtml = '';
         if (h.quote) {
-            highlightHtml += `<blockquote>${h.quote}</blockquote>`;
+            const quoteHtml = md.render(h.quote); // Convert Markdown quote to HTML
+            highlightHtml += `<blockquote>${quoteHtml}</blockquote>`;
         }
         if (h.annotation) {
-            highlightHtml += `<p>${h.annotation}</p>`;
+            highlightHtml += `<p>${h.annotation}</p>`; // Annotations are assumed to be plain text
         }
         return highlightHtml;
     }).join(' ');
 
+    // Construct the HTML content with the converted highlights
     const htmlContent = `
         <!--kg-card-begin: html-->
         <div class="link-item" 
