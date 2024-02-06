@@ -22,7 +22,7 @@ const OMNIVORE_LABEL_NAME = 'ghost'; // Replace 'ghost' with the label name you 
 exports.omnivoreToGhostSync = async (req, res) => {
     try {
         console.log("Request body:", JSON.stringify(req.body, null, 0));
-        
+                
         let articleIdentifier;
 
         if (req.body.page && req.body.page.slug) {
@@ -31,6 +31,9 @@ exports.omnivoreToGhostSync = async (req, res) => {
             articleIdentifier = req.body.highlight.pageId;
         } else if (req.body.label && req.body.label.pageId) {
             articleIdentifier = req.body.label.pageId;
+        // Updated to include check for page.id when other identifiers are missing
+        } else if (req.body.page && req.body.page.id) {
+            articleIdentifier = req.body.page.id;
         } else {
             console.error('No valid identifier found in the request.');
             return res.status(400).send('Invalid request: Identifier is missing.');
@@ -228,18 +231,23 @@ async function createOrUpdatePost(article, action, slug) {
 
     if (existingPost) {
         console.log(`Found existing post for slug: ${slug}, updating...`);
-        response = await api.posts.edit({
+
+        // Check if the title has changed and update it along with the HTML
+        const updates = {
             id: existingPost.id,
-            title: article.title,
             html: article.html,
             tags: ['links'],
-            // Ensure the updated_at field is properly set; might need to fetch current value if necessary
             updated_at: existingPost.updated_at,
             status: 'published',
             visibility: 'public',
-            // Consider whether the canonical URL needs updating
             canonical_url: article.canonicalUrl
-        }, { source: 'html' });
+        };
+
+        if (existingPost.title !== article.title) {
+            updates.title = article.title; // Update the title if it has changed
+        }
+
+        response = await api.posts.edit(updates, { source: 'html' });
     } else {
         console.log(`No existing post found for slug: ${slug}, creating new post...`);
         response = await api.posts.add({
