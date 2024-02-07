@@ -21,19 +21,18 @@ const OMNIVORE_LABEL_NAME = 'ghost'; // Replace 'ghost' with the label name you 
 // Entry point for the Cloud Function
 exports.omnivoreToGhostSync = async (req, res) => {
     try {
-        console.log("Request body:", JSON.stringify(req.body, null, 0));
-                
+        console.log("Request body:", JSON.stringify(req.body, null, 2));
+        
         let articleIdentifier;
 
-        if (req.body.page && req.body.page.slug) {
+        if (req.body.page?.slug) {
             articleIdentifier = req.body.page.slug;
-        } else if (req.body.highlight && req.body.highlight.pageId) {
+        } else if (req.body.highlight?.pageId) {
             articleIdentifier = req.body.highlight.pageId;
-        } else if (req.body.label && req.body.label.pageId) {
+        } else if (req.body.label?.pageId) {
             articleIdentifier = req.body.label.pageId;
-        // Updated to include check for page.id when other identifiers are missing
-        } else if (req.body.page && req.body.page.id) {
-            articleIdentifier = req.body.page.id;
+        } else if (req.body.page?.id) {
+            articleIdentifier = req.body.page.id; // For delete action
         } else {
             console.error('No valid identifier found in the request.');
             return res.status(400).send('Invalid request: Identifier is missing.');
@@ -41,13 +40,19 @@ exports.omnivoreToGhostSync = async (req, res) => {
 
         console.log("Determined articleIdentifier:", articleIdentifier);
 
-        const { action, state } = req.body;
+        const { action } = req.body;
+        // Extract state for delete action specifically
+        const state = req.body.page?.state;
         console.log(`Action: ${action}, State: ${state}`);
 
-        const graphqlResponse = await queryOmnivoreAPI(articleIdentifier);
-        console.log("GraphQL Response:", JSON.stringify(graphqlResponse, null, 0));
+        if (action === 'updated' && state === 'DELETED') {
+            // Directly handle delete action here
+            await updateGhostBlog(null, action, state, articleIdentifier);
+            return res.status(200).send('Deletion processed successfully.');
+        }
 
-        if (!shouldProcess(graphqlResponse, action, state)) {
+        const graphqlResponse = await queryOmnivoreAPI(articleIdentifier);
+        if (!shouldProcess(graphqlResponse, action)) {
             return res.status(200).send('No action required.');
         }
 
@@ -57,13 +62,11 @@ exports.omnivoreToGhostSync = async (req, res) => {
         }
 
         const htmlContent = formatToHTML(graphqlResponse);
-        // Log the slug that is about to be passed to updateGhostBlog
-        console.log(`Calling updateGhostBlog with slug: ${graphqlResponse.article.slug}`);
         await updateGhostBlog(htmlContent, action, state, graphqlResponse.article.slug);
 
         return res.status(200).send('Update processed successfully.');
     } catch (error) {
-        console.error('Error in omnivoreToGhostSync3:', error);
+        console.error('Error in omnivoreToGhostSync:', error);
         res.status(500).send('Internal Server Error');
     }
 };
@@ -182,24 +185,23 @@ function shouldProcess(graphqlResponse, action, state) {
 
 // Create, update or delete the Ghost post
 async function updateGhostBlog(article, action, state, slug) {
-    if (!slug) {
-        console.error('Slug is undefined in updateGhostBlog');
-        return;
-    }
-
-    console.log(`updateGhostBlog called with slug: ${slug}, action: ${action}, and state: ${state}`);
+    console.log(`updateGhostBlog called with slug: ${slug}, action: ${action}, state: ${state}`);
     try {
-        if (state === 'DELETED') {
-            console.log(`Deleting post for slug: ${slug} because state is DELETED.`);
+        if (action === 'updated' && state === 'DELETED') {
+            console.log(`Attempting to delete post for Page ID: ${slug} because state is DELETED.`);
             await deletePost(slug);
         } else if (action === 'updated' || action === 'created') {
+            if (!article) {
+                console.error('Article content is missing, cannot proceed.');
+                return;
+            }
             await createOrUpdatePost(article, action, slug);
         } else {
-            console.error(`Unhandled action: ${action} or state: ${state}`);
+            console.error(`Unhandled action: ${action}`);
         }
         console.log("Post processed successfully.");
     } catch (error) {
-        console.error(`Error in updateGhostBlog for slug: ${slug}:`, error);
+        console.error(`Error in updateGhostBlog:`, error);
     }
 }
 
@@ -267,11 +269,24 @@ async function createOrUpdatePost(article, action, slug) {
     }
 }
 
-// For a deleted bookmark with the given slug find existing post and delete it
-async function deletePost(slug) {
-    const post = await findPostBySlug(slug);
-    if (post) {
-        await api.posts.delete({ id: post.id });
+// Find and delete a post by data-page-delete-id
+async function deletePost(pageId) {
+    try {
+        const posts = await api.posts.browse({filter: 'tag:links', limit: 'all', formats: 'html'});
+        let found = false;
+        for (let post of posts) {
+            if (post.html && post.html.includes(`data-page-delete-id="${pageId}"`)) {
+                await api.posts.delete({id: post.id});
+                console.log(`Deleted post with Page ID: ${pageId}.`);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            console.log(`No post found with Page ID: ${pageId} to delete.`);
+        }
+    } catch (error) {
+        console.error(`Error deleting post with Page ID ${pageId}:`, error);
     }
 }
 
@@ -305,12 +320,13 @@ function formatToHTML(graphqlResponse) {
         return highlightHtml;
     }).join(' ');
 
-    // Construct the HTML content with the converted highlights
+    // Include data-page-delete-id with the page ID
     const htmlContent = `
         <!--kg-card-begin: html-->
         <div class="link-item" 
              data-tag="links" 
              data-page-id="${article.slug}" 
+             data-page-delete-id="${article.id}" // Including data-page-delete-id
              data-title="${article.title}" 
              data-original-url="${article.originalArticleUrl}" 
              data-creation-date="${formattedDate}">
