@@ -68,5 +68,10 @@ const OMNIVORE_LABEL_NAME = 'ghost'; // Replace 'ghost' with the label name you 
 - Bookmark items in Omnivore with annotations and tags; these will be synced to your Ghost blog automatically.
 - Quite a few additional things were necessary to integrate posts with my blog on Ghost.org. It included modifying a page to host links.hbs file and rollup the posts, updating routes.yaml to link to the page and the rss feed, creating the rss feed and updating links.hbs to surface the custom RSS feed. Those adjustments are described in [this blog post](https://danielraffel.me/2024/01/30/intriguing-stuff/).
 
+## Displaying the Data on A Ghost Blog
+- To display the content on my blog at [danielraffel.me/links](danielraffel.me/links), I updated the [routes.yaml](https://gist.github.com/danielraffel/b9fcc4f91e0ce11737a67cb8200217e4) file. The routes file: a) Links to a slightly modified [RSS feed](https://github.com/danielraffel/Dawn-mod-main/blob/main/links/rss.hbs) containing a page specific Title. b. Establishes the collection where the `/links` page will live.
+- I also created [links.hbs](https://github.com/danielraffel/Dawn-mod-main/blob/main/links.hbs) to rollup all the posts tagged with links on Ghost. I used JavaScript to group posts by the reverse, chronological date they were saved to Omnivore and to format the links in a style similar to Daring Fireball, where the post title leads to the external site.
+- Since I wanted the `/links` page to include metadata linking to a custom RSS feed, so someone could copy/paste the URL from the that page to their feed reader and subscribe to an RSS for just the links, I had to [come up with a novel solution](https://github.com/danielraffel/Dawn-mod-main/commit/5317e883a74c33ab260135a13b64613b9d0900a0) which required some workarounds that I'm not happy about. Hopefully, I'll discover better ways to do this in the future but for now I don't see how to link to a custom RSS feed on Ghost other than to hack the header like I did.
+
 ## Local Testing
 - Uncomment the local server code in `index.js` if you wish to run the application locally for testing purposes.
