@@ -3,6 +3,8 @@ const bodyParser = require('body-parser');
 const GhostAdminAPI = require('@tryghost/admin-api');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const app = express();
+const { Remarkable } = require('remarkable');
+const md = new Remarkable();
 app.use(bodyParser.json());
 
 // Configure variables to use the Ghost Admin API
@@ -16,7 +18,7 @@ const api = new GhostAdminAPI({
 const OMNIVORE_API_URL = 'https://api-prod.omnivore.app/api/graphql'; // Leave as is unless running a hosted Omnivore instance then change it to that!
 const OMNIVORE_AUTH_TOKEN = 'YOUR_OMNIVORE_AUTH_TOKEN'; // Replace with your Omnivore API token https://docs.omnivore.app/integrations/api.html#getting-an-api-token
 const GLOBAL_TIME_ZONE = 'America/Los_Angeles'; // Replace with your timezone so that the create date matches your blogs timezone
-const OMNIVORE_LABEL_NAME = 'ghost'; // Replace 'ghost' with the label name you want to tag your links in Omnivore to appear on your Ghost blog 
+const OMNIVORE_LABEL_NAME = 'ghost'; // Replace 'ghost' with the label name you want to tag your links in Omnivore to appear on your Ghost blog
 
 // Entry point for the Cloud Function
 exports.omnivoreToGhostSync = async (req, res) => {
@@ -32,7 +34,7 @@ exports.omnivoreToGhostSync = async (req, res) => {
         } else if (req.body.label?.pageId) {
             articleIdentifier = req.body.label.pageId;
         } else if (req.body.page?.id) {
-            articleIdentifier = req.body.page.id; // For delete action
+            articleIdentifier = req.body.page.id;
         } else {
             console.error('No valid identifier found in the request.');
             return res.status(400).send('Invalid request: Identifier is missing.');
@@ -41,12 +43,10 @@ exports.omnivoreToGhostSync = async (req, res) => {
         console.log("Determined articleIdentifier:", articleIdentifier);
 
         const { action } = req.body;
-        // Extract state for delete action specifically
         const state = req.body.page?.state;
         console.log(`Action: ${action}, State: ${state}`);
 
         if (action === 'updated' && state === 'DELETED') {
-            // Directly handle delete action here
             await updateGhostBlog(null, action, state, articleIdentifier);
             return res.status(200).send('Deletion processed successfully.');
         }
@@ -85,6 +85,7 @@ async function queryOmnivoreAPI(identifier) {
               slug
               id
               createdAt
+              description
               labels {
                 name
               }
@@ -117,7 +118,7 @@ async function queryOmnivoreAPI(identifier) {
     });
 
     const data = await response.json();
-    console.log("GraphQL Response:", JSON.stringify(data, null, 0)); // Log the GraphQL response data in full
+    console.log("GraphQL Response:", JSON.stringify(data, null, 0));
 
     if (data.errors) {
         console.error('GraphQL errors:', data.errors);
@@ -142,41 +143,29 @@ function shouldProcess(graphqlResponse, action, state) {
     }
 
     const hasGhostLabel = graphqlResponse.article.labels.some(label => label.name === OMNIVORE_LABEL_NAME);
-    // check for any non-null annotation across all highlights
-    const hasNonNullAnnotation = graphqlResponse.article.highlights && graphqlResponse.article.highlights.some(highlight => highlight.annotation != null);
+    const hasDescription = !!graphqlResponse.article.description;
 
     if (graphqlResponse.article.labels.some(label => label.name === 'Newsletter')) {
         console.log('Detected a newsletter, not posting to Ghost');
         return false;
     }
 
-    if (action === 'created') {
+    if (action === 'created' || action === 'updated') {
         if (!hasGhostLabel) {
-            console.log('New bookmark but no ghost label, not posting to Ghost');
+            console.log('Bookmark does not have the ghost label, not posting to Ghost');
             return false;
         }
-        // Check if there is any non-null annotation when the ghost label exists
-        if (hasGhostLabel && !hasNonNullAnnotation) {
-            console.log('New bookmark with ghost label but no non-null annotation, not posting to Ghost');
+        if (!hasDescription) {
+            console.log('Bookmark does not have a description, not posting to Ghost');
             return false;
         }
-        console.log('Detected a new bookmark with ghost label and non-null annotation, posting to Ghost');
+        console.log('Detected a bookmark with ghost label and description, posting/updating in Ghost');
         return true;
     }
 
-    if (action === 'updated') {
-        if (!hasGhostLabel) {
-            console.log('Updated bookmark but no ghost label, not posting to Ghost');
-            return false;
-        }
-        if (state === 'DELETED') {
-            console.log('Detected a deleted bookmark with ghost label, removing from Ghost');
-            return true;
-        }
-        if (hasGhostLabel && hasNonNullAnnotation) {
-            console.log('Detected an updated bookmark with ghost label and non-null annotation, updating Ghost');
-            return true;
-        }
+    if (action === 'updated' && state === 'DELETED') {
+        console.log('Detected a deleted bookmark with ghost label, removing from Ghost');
+        return true;
     }
 
     console.log('Action not recognized or not applicable, not posting to Ghost');
@@ -208,9 +197,8 @@ async function updateGhostBlog(article, action, state, slug) {
 // Find existing post by data-page-id in HTML content
 async function findPostBySlug(articleSlug) {
     try {
-        const tag = 'links'; // Define the tag used to filter posts
+        const tag = 'links';
         const posts = await api.posts.browse({filter: `tag:${tag}`, limit: 10, formats: 'html'});
-        // Search each post's HTML for the data-page-id
         const matchingPost = posts.find(post => post.html.includes(`data-page-id="${articleSlug}"`));
         return matchingPost || null;
     } catch (error) {
@@ -234,7 +222,6 @@ async function createOrUpdatePost(article, action, slug) {
     if (existingPost) {
         console.log(`Found existing post for slug: ${slug}, updating...`);
 
-        // Check if the title has changed and update it along with the HTML
         const updates = {
             id: existingPost.id,
             html: article.html,
@@ -246,7 +233,7 @@ async function createOrUpdatePost(article, action, slug) {
         };
 
         if (existingPost.title !== article.title) {
-            updates.title = article.title; // Update the title if it has changed
+            updates.title = article.title;
         }
 
         response = await api.posts.edit(updates, { source: 'html' });
@@ -307,29 +294,35 @@ function formatToHTML(graphqlResponse) {
     const article = graphqlResponse.article;
     const formattedDate = formatDate(article.createdAt);
 
+    // Exclude annotations that begin with "###### Summary"
+    // I use GenAI to create summaries of my bookmarks and include them as annotations, but I prefer not to publish these so filter them out.
+    // For information on configuring auto-summarization, visit: https://danielraffel.me/2024/03/28/using-open-router-with-gemini-1-5/
+    // If you do not need to exclude annotations starting with "###### Summary," you can comment out the line below
+    const filteredHighlights = article.highlights.filter(h => !h.annotation || !h.annotation.startsWith('###### Summary'));
+
     // Convert each highlight's quote from Markdown to HTML and wrap with <blockquote>
-    const htmlHighlights = article.highlights.map(h => {
+    const htmlHighlights = filteredHighlights.map(h => {
         let highlightHtml = '';
         if (h.quote) {
-            const quoteHtml = md.render(h.quote); // Convert Markdown quote to HTML
+            const quoteHtml = md.render(h.quote);
             highlightHtml += `<blockquote>${quoteHtml}</blockquote>`;
         }
         if (h.annotation) {
-            highlightHtml += `<p>${h.annotation}</p>`; // Annotations are assumed to be plain text
+            highlightHtml += `<p>${h.annotation}</p>`;
         }
         return highlightHtml;
     }).join(' ');
 
-    // Include data-page-delete-id with the page ID
     const htmlContent = `
         <!--kg-card-begin: html-->
         <div class="link-item" 
              data-tag="links" 
              data-page-id="${article.slug}" 
-             data-page-delete-id="${article.id}" // Including data-page-delete-id
+             data-page-delete-id="${article.id}"
              data-title="${article.title}" 
              data-original-url="${article.originalArticleUrl}" 
              data-creation-date="${formattedDate}">
+            <p>${article.description}</p>
             ${htmlHighlights}
         </div>
         <!--kg-card-end: html-->`;
@@ -340,15 +333,14 @@ function formatToHTML(graphqlResponse) {
         canonicalUrl: article.originalArticleUrl
     };
 }
-  
+
 // // Local server configs for testing
 // if (process.env.NODE_ENV === 'development') {
 //     const PORT = 8080;
 //     app.listen(PORT, () => {
-//       console.log(`Server running on port ${PORT}`);
+//       console.log(Server running on port ${PORT});
 //     });
 //   }
-
 // // Command to deploy to Google Cloud Functions using CLI
 // gcloud functions deploy omnivoreToGhostSync \
 //   --gen2 \
