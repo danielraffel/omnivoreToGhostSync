@@ -1,3 +1,7 @@
+# 💀 RIP: Omnivore 🪦 Use [Raindrop.io](https://Raindrop.io) and [raindrop-to-ghost-sync](https://github.com/danielraffel/raindrop-to-ghost-sync)
+
+---
+ 
 # OmnivoreToGhostSync
 
 OmnivoreToGhostSync is a Cloud Function designed to seamlessly integrate the bookmarking service [Omnivore](https://omnivore.app) with the [Ghost blogging platform](https://ghost.org). This project simplifies the process of publishing curated links and annotations from Omnivore directly to a Ghost blog, making it ideal for bloggers who want a lightweight mechanism to easily post links and brief commentary (when saving a bookmark.)
